@@ -102,6 +102,12 @@ tasks.jar {
             )
         )
     }
+
+    // include subproject jar
+    from(project(":fmlloadertargets").tasks.jar) {
+        into("fmlloadertargets")
+        rename(".+", "fmlloadertargets.jar")
+    }
 }
 
 tasks.test {

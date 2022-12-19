@@ -6,7 +6,14 @@ import net.minecraftforge.binarypatcher.ConsoleTool
 import org.apache.commons.io.output.NullOutputStream
 import org.gradle.api.Project
 import org.gradle.api.artifacts.Dependency
+import org.gradle.api.artifacts.transform.InputArtifact
+import org.gradle.api.artifacts.transform.TransformAction
+import org.gradle.api.artifacts.transform.TransformOutputs
+import org.gradle.api.artifacts.transform.TransformParameters
+import org.gradle.api.attributes.Attribute
+import org.gradle.api.file.FileSystemLocation
 import org.gradle.api.logging.LogLevel
+import org.gradle.api.provider.Provider
 import org.gradle.api.tasks.SourceSet
 import org.gradle.api.tasks.SourceSetContainer
 import org.gradle.api.tasks.TaskContainer
@@ -31,7 +38,7 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.*
 import kotlin.io.path.*
 
-class FG3MinecraftTransformer(project: Project, val parent: ForgeMinecraftTransformer) : JarModMinecraftTransformer(
+class  FG3MinecraftTransformer(project: Project, val parent: ForgeMinecraftTransformer) : JarModMinecraftTransformer(
     project, parent.provider, Constants.FORGE_PROVIDER
 ) {
 
@@ -107,6 +114,18 @@ class FG3MinecraftTransformer(project: Project, val parent: ForgeMinecraftTransf
             }
         }
 
+        // extract and provide /fmlloadertargets/fmlloadertargets.jar
+        val loaderTargets = provider.parent.getGlobalCache().resolve("fmlloadertargets.jar")
+        FG3MinecraftTransformer::class.java.getResourceAsStream("/fmlloadertargets/fmlloadertargets.jar").use { input ->
+            Files.copy(
+                input,
+                loaderTargets,
+                StandardCopyOption.REPLACE_EXISTING,
+            )
+        }
+        provider.mcLibraries.dependencies.add(project.dependencies.create(project.files(loaderTargets.toFile())))
+
+
         // get forge userdev jar
         val forgeUd = forgeUd.getFile(forgeUd.dependencies.last())
         if (userdevCfg.has("inject")) {
@@ -138,6 +157,10 @@ class FG3MinecraftTransformer(project: Project, val parent: ForgeMinecraftTransf
                     project.dependencies.create(project.files(parent.srgToMCPAsMCP))
                 )
             }
+        }
+
+        addTransform {
+            it.getPath("")
         }
     }
 
@@ -315,50 +338,50 @@ class FG3MinecraftTransformer(project: Project, val parent: ForgeMinecraftTransf
     val legacyClasspath = provider.parent.getLocalCache().createDirectories().resolve("legacy_classpath.txt")
 
     private fun getArgValue(config: RunConfig, arg: String): String {
-        if (arg.startsWith("{")) {
-            return when (arg) {
-                "{minecraft_classpath_file}" -> {
-                    legacyClasspath.toString()
-                }
-
-                "{modules}" -> {
-                    val libs = mapOf(*provider.mcLibraries.dependencies.map { it.group + ":" + it.name + ":" + it.version to it }
-                        .toTypedArray())
-                    userdevCfg.get("modules").asJsonArray.joinToString(File.pathSeparator) {
-                        val dep = libs[it.asString]
-                            ?: throw IllegalStateException("Module ${it.asString} not found in mc libraries")
-                        provider.mcLibraries.getFile(dep).toString()
-                    }
-                }
-
-                "{assets_root}" -> {
-                    val assetsDir = provider.minecraft.metadata.assetIndex?.let {
-                        provider.assetsDownloader.assetsDir()
-                    }
-                    (assetsDir ?: provider.clientWorkingDirectory.get().resolve("assets").toPath()).toString()
-                }
-
-                "{asset_index}" -> provider.minecraft.metadata.assetIndex?.id ?: ""
-                "{source_roots}" -> {
-                    (listOf(config.commonClasspath.output.resourcesDir) + config.commonClasspath.output.classesDirs + detectOtherProjectSourceSetOutputs().flatMap {
-                        listOf(
-                            it.output.resourcesDir
-                        ) + it.output.classesDirs
-                    }).joinToString(
-                        File.pathSeparator
-                    ) { "mod%%$it" }
-                }
-                "{mcp_mappings}" -> "unimined.stub"
-                "{natives}" -> {
-                    val nativesDir = provider.clientWorkingDirectory.get().resolve("natives").toPath()
-                    nativesDir.createDirectories()
-                    nativesDir.toString()
-                }
-
-                else -> throw IllegalArgumentException("Unknown arg $arg")
+        return when (arg) {
+            "{minecraft_classpath_file}" -> {
+                legacyClasspath.toString()
             }
-        } else {
-            return arg
+
+            "{modules}" -> {
+                val libs = mapOf(*provider.mcLibraries.dependencies.map { it.group + ":" + it.name + ":" + it.version to it }
+                    .toTypedArray())
+                userdevCfg.get("modules").asJsonArray.joinToString(File.pathSeparator) {
+                    val dep = libs[it.asString]
+                        ?: throw IllegalStateException("Module ${it.asString} not found in mc libraries")
+                    provider.mcLibraries.getFile(dep).toString()
+                }
+            }
+
+            "{assets_root}" -> {
+                val assetsDir = provider.minecraft.metadata.assetIndex?.let {
+                    provider.assetsDownloader.assetsDir()
+                }
+                (assetsDir ?: provider.clientWorkingDirectory.get().resolve("assets").toPath()).toString()
+            }
+
+            "{asset_index}" -> provider.minecraft.metadata.assetIndex?.id ?: ""
+            "{source_roots}" -> {
+                (listOf(config.commonClasspath.output.resourcesDir) + config.commonClasspath.output.classesDirs + detectOtherProjectSourceSetOutputs().flatMap {
+                    listOf(
+                        it.output.resourcesDir
+                    ) + it.output.classesDirs
+                }).joinToString(
+                    File.pathSeparator
+                ) { "mod%%$it" }
+            }
+            "{mcp_mappings}" -> "unimined.stub"
+            "{natives}" -> {
+                val nativesDir = provider.clientWorkingDirectory.get().resolve("natives").toPath()
+                nativesDir.createDirectories()
+                nativesDir.toString()
+            }
+            "forgeclientuserdev" -> {
+                "uniminedclientuserdev"
+            }
+            else -> {
+                if (arg.startsWith("{")) throw IllegalArgumentException("Unknown arg $arg") else arg
+            }
         }
     }
 
@@ -397,14 +420,14 @@ class FG3MinecraftTransformer(project: Project, val parent: ForgeMinecraftTransf
             parent.tweakClassClient = get("env")?.asJsonObject?.get("tweakClass")?.asString
             if (mainClass.startsWith("net.minecraftforge.legacydev")) {
                 project.logger.info("[fg3] Using legacy client run config")
-                provider.provideVanillaRunClientTask(tasks) {
-                    it.mainClass = "net.minecraft.launchwrapper.Launch"
-                    it.jvmArgs += "-Dfml.deobfuscatedEnvironment=true"
-                    it.jvmArgs += "-Dfml.ignoreInvalidMinecraftCertificates=true"
-                    it.jvmArgs += "-Dnet.minecraftforge.gradle.GradleStart.srg.srg-mcp=${parent.srgToMCPAsSRG}"
-                    it.args += "--tweakClass ${parent.tweakClassClient ?: "net.minecraftforge.fml.common.launcher.FMLTweaker"}"
-                    project.logger.info("[fg3] Run config: $it")
-                    action(it)
+                provider.provideVanillaRunClientTask(tasks) { run ->
+                    run.mainClass = "net.minecraft.launchwrapper.Launch"
+                    run.jvmArgs += "-Dfml.deobfuscatedEnvironment=true"
+                    run.jvmArgs += "-Dfml.ignoreInvalidMinecraftCertificates=true"
+                    run.jvmArgs += "-Dnet.minecraftforge.gradle.GradleStart.srg.srg-mcp=${parent.srgToMCPAsSRG}"
+                    run.args += "--tweakClass ${parent.tweakClassClient ?: "net.minecraftforge.fml.common.launcher.FMLTweaker"}"
+                    project.logger.info("[fg3] Run config: $run")
+                    action(run)
                 }
             } else {
                 project.logger.info("[fg3] Using new client run config")
@@ -418,6 +441,7 @@ class FG3MinecraftTransformer(project: Project, val parent: ForgeMinecraftTransf
                     run.args += args.map { getArgValue(run, it) }
                     run.jvmArgs += jvmArgs.map { getArgValue(run, it) }
                     run.jvmArgs += props.map { "-D${it.key}=${getArgValue(run, it.value)}" }
+                    run.jvmArgs += "-Dnet.minecraftforge.gradle.GradleStart.srg.srg-mcp=${parent.srgToMCPAsSRG}"
                     run.env += mapOf("FORGE_SPEC" to userdevCfg.get("spec").asNumber.toString())
                     run.env += env.map { it.key to getArgValue(run, it.value) }
                     project.logger.info("[fg3] Run config: $run")
@@ -497,5 +521,20 @@ class FG3MinecraftTransformer(project: Project, val parent: ForgeMinecraftTransf
             return target
         }
         return baseMinecraft
+    }
+
+    abstract class RemoveNameProvider : TransformAction<TransformParameters.None> {
+        @get:InputArtifact
+        abstract val input: Provider<FileSystemLocation>
+
+        override fun transform(outputs: TransformOutputs) {
+            val input = input.get().asFile
+            println("transforming $input")
+            val output = outputs.file(input.nameWithoutExtension + "-unimined-transformed.jar")
+            Files.copy(input.toPath(), output.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            ZipReader.openZipFileSystem(output.toPath(), mapOf("mutable" to true)).use { fs ->
+                fs.getPath("META-INF/services/cpw.mods.modlauncher.api.INameMappingService").deleteIfExists()
+            }
+        }
     }
 }

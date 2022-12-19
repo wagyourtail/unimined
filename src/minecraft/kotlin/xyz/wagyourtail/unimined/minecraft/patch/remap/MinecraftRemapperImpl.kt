@@ -1,5 +1,6 @@
 package xyz.wagyourtail.unimined.minecraft.patch.remap
 
+import net.fabricmc.mappingio.format.ZipReader
 import net.fabricmc.tinyremapper.NonClassCopyMode
 import net.fabricmc.tinyremapper.OutputConsumerPath
 import net.fabricmc.tinyremapper.TinyRemapper
@@ -10,6 +11,7 @@ import xyz.wagyourtail.unimined.minecraft.MinecraftProviderImpl
 import xyz.wagyourtail.unimined.minecraft.patch.MinecraftJar
 import xyz.wagyourtail.unimined.minecraft.patch.forge.AccessTransformerMinecraftTransformer
 import xyz.wagyourtail.unimined.util.consumerApply
+import java.nio.file.FileSystem
 import kotlin.io.path.*
 
 @Suppress("MemberVisibilityCanBePrivate")
@@ -20,6 +22,8 @@ class MinecraftRemapperImpl(
     private val mappings by lazy { provider.parent.mappingsProvider }
 
     override var tinyRemapperConf: (TinyRemapper.Builder) -> Unit = {}
+
+    override var afterRemap: (FileSystem) -> Unit = {}
 
     @ApiStatus.Internal
     fun provide(minecraft: MinecraftJar, remapTo: String, remapFallback: String): MinecraftJar {
@@ -82,6 +86,9 @@ class MinecraftRemapperImpl(
                 throw e
             }
             remapper.finish()
+
+            ZipReader.openZipFileSystem(target.path, mapOf("mutable" to true)).use(afterRemap)
+
             target
         })
     }

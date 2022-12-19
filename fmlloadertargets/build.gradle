@@ -1,0 +1,12 @@
+apply plugin: 'java'
+
+repositories {
+    maven { url "https://files.minecraftforge.net/maven" }
+    maven { url "https://libraries.minecraft.net/"}
+}
+
+
+dependencies {
+    implementation "net.minecraftforge:fmlloader:1.19.3-44.0.1", { transitive false }
+    implementation "cpw.mods:modlauncher:10.0.8", { transitive false }
+}

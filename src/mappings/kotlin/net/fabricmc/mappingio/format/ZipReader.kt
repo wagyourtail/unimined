@@ -10,8 +10,12 @@ import java.nio.file.FileSystem
 import java.nio.file.FileSystems
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.*
+import java.util.stream.Stream
+import java.util.stream.StreamSupport
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
+import kotlin.NoSuchElementException
 import kotlin.io.path.inputStream
 import kotlin.io.path.outputStream
 
@@ -294,6 +298,37 @@ object ZipReader {
             contents.add(entry)
         }
         return contents
+    }
+
+    fun contentIterator(stream: ZipInputStream): Iterator<Pair<String, InputStream>> {
+        return object : Iterator<Pair<String, InputStream>> {
+            var entry = stream.nextEntry
+            override fun hasNext(): Boolean {
+                return entry != null
+            }
+
+            override fun next(): Pair<String, InputStream> {
+                val e = entry ?: throw NoSuchElementException()
+                entry = stream.nextEntry
+                return Pair(e.name, stream)
+            }
+        }
+    }
+
+    fun contentStream(stream: ZipInputStream): Stream<Pair<String, InputStream>> {
+        return StreamSupport.stream(
+            Spliterators.spliteratorUnknownSize(
+                contentIterator(stream),
+                Spliterator.ORDERED
+            ),
+            false
+        )
+    }
+
+    fun <T> usingZipInput(zip:Path, use: (ZipInputStream) -> T): T {
+        return ZipInputStream(Files.newInputStream(zip)).use {
+            use(it)
+        }
     }
 
     fun forEachInZip(zip: Path, action: (String, InputStream) -> Unit) {

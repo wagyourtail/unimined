@@ -98,7 +98,7 @@ abstract class MinecraftProviderImpl(
      * please use [jarMod], [forge], or [fabric] instead.
      */
     @get:ApiStatus.Internal
-    public override var mcPatcher: AbstractMinecraftTransformer by ChangeOnce(NoTransformMinecraftTransformer(project, this))
+    override var mcPatcher: AbstractMinecraftTransformer by ChangeOnce(NoTransformMinecraftTransformer(project, this))
 
     init {
         project.repositories.maven {

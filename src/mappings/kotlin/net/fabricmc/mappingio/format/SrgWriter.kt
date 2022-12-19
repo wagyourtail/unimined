@@ -70,7 +70,8 @@ class SrgWriter(val writer: Writer) : MappingWriter {
             }
 
             MappedElementKind.METHOD -> {
-                writer.write("MD: $clazz/$method $methodDesc $clazz/$name $methodDesc\n")
+                val targetClassName = if (clazzName != null) clazzName else clazz
+                writer.write("MD: $clazz/$method $methodDesc $targetClassName/$name $methodDesc\n")
             }
 
             else -> {}

@@ -1,5 +1,7 @@
 package xyz.wagyourtail.unimined.mappings
 
+import net.fabricmc.mappingio.MappedElementKind
+import net.fabricmc.mappingio.MappingWriter
 import net.fabricmc.mappingio.adapter.MappingSourceNsSwitch
 import net.fabricmc.mappingio.format.MCPWriter
 import net.fabricmc.mappingio.format.MappingDstNsFilter
@@ -73,7 +75,7 @@ class MappingExportImpl(envType: EnvType) : MappingExport(envType) {
         location!!.toPath()
             .outputStream(StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)
             .use { os ->
-                val visitor = when (type) {
+                var visitor = when (type) {
                     MappingExportTypes.MCP -> MCPWriter(os, envType.ordinal)
                     MappingExportTypes.TINY_V2 -> Tiny2Writer2(
                         OutputStreamWriter(os, StandardCharsets.UTF_8),
@@ -82,6 +84,13 @@ class MappingExportImpl(envType: EnvType) : MappingExport(envType) {
 
                     MappingExportTypes.SRG -> SrgWriter(OutputStreamWriter(os, StandardCharsets.UTF_8))
                     else -> throw RuntimeException("Unknown export type $type")
+                }
+                if (skipComments) {
+                    visitor = object : MappingWriter by visitor {
+                        override fun visitComment(targetKind: MappedElementKind?, comment: String?) {
+                            // do nothing
+                        }
+                    }
                 }
                 mappingTree.accept(
                     MappingSourceNsSwitch(
