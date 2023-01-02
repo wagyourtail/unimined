@@ -254,6 +254,10 @@ abstract class MappingsProviderImpl(
             var fallbackToId = mappingTree.getNamespaceId(fallbackTarget)
             val toId = mappingTree.getNamespaceId(targetName)
 
+            if (fromId == MappingTreeView.NULL_NAMESPACE_ID) {
+                throw RuntimeException("Namespace $srcName not found in mappings")
+            }
+
             if (toId == MappingTreeView.NULL_NAMESPACE_ID) {
                 throw RuntimeException("Namespace $targetName not found in mappings")
             }
@@ -304,47 +308,71 @@ abstract class MappingsProviderImpl(
                 }
 
                 project.logger.debug("fromClassName: $fromClassName toClassName: $toClassName")
-                if (toClassName != null) {
+                if (fromClassName != null) {
                     acceptor.acceptClass(fromClassName, toClassName)
                 }
 
                 for (fieldDef in classDef.fields) {
-                    val fromFieldName = fieldDef.getName(fromId) ?: fieldDef.getName(fallbackSrcId)
-                    val toFieldName = fieldDef.getName(toId) ?: fieldDef.getName(fallbackToId)
-                    if (fromFieldName == null || toFieldName == null) {
-                        project.logger.debug("No field name for $fieldDef")
-                        continue
+                    var fromFieldName = fieldDef.getName(fromId) ?: fieldDef.getName(fallbackSrcId)
+                    var toFieldName = fieldDef.getName(toId) ?: fieldDef.getName(fallbackToId)
+                    val fromFieldDesc = fieldDef.getDesc(fromId) ?: fieldDef.getDesc(fallbackSrcId)
+
+                    if (fromFieldName == null) {
+                        project.logger.debug("From field name not found for $fieldDef")
+                        fromFieldName = toFieldName;
                     }
-                    project.logger.debug("fromFieldName: $fromFieldName toFieldName: $toFieldName")
-                    acceptor.acceptField(
-                        memberOf(fromClassName, fromFieldName, fieldDef.getDesc(fromId)), toFieldName
-                    )
+
+                    if (toFieldName == null) {
+                        project.logger.debug("To field name not found for $fieldDef")
+                        toFieldName = fromFieldName
+                    }
+
+                    if (fromFieldName == null) {
+                        project.logger.error("Field name not found for $fieldDef")
+                    }
+
+                    if (toFieldName != null) {
+                        project.logger.debug("fromFieldName: $fromFieldName toFieldName: $toFieldName")
+                        acceptor.acceptField(
+                            memberOf(fromClassName, fromFieldName, fromFieldDesc), toFieldName
+                        )
+                    }
                 }
 
                 for (methodDef in classDef.methods) {
                     val fromMethodName = methodDef.getName(fromId) ?: methodDef.getName(fallbackSrcId)
-                    val toMethodName = methodDef.getName(toId) ?: methodDef.getName(fallbackToId)
+                    var toMethodName = methodDef.getName(toId) ?: methodDef.getName(fallbackToId)
+                    // TODO: custom method for this... to merge with fallback instead of replacing
                     val fromMethodDesc = methodDef.getDesc(fromId) ?: methodDef.getDesc(fallbackSrcId)
-                    if (fromMethodName == null || toMethodName == null) {
-                        project.logger.debug("No method name for $methodDef")
-                        continue
+
+                    if (toMethodName == null) {
+                        project.logger.debug("To Method name not found for $methodDef")
+                        toMethodName = fromMethodName
                     }
-                    val method = memberOf(fromClassName, fromMethodName, fromMethodDesc)
 
-                    project.logger.debug("fromMethodName: $fromMethodName toMethodName: $toMethodName")
-                    acceptor.acceptMethod(method, toMethodName)
+                    if (fromMethodName == null) {
+                        project.logger.error("Method name not found for $methodDef")
+                    }
 
-                    if (remapLocalVariables) {
-                        for (arg in methodDef.args) {
-                            val toArgName = arg.getName(toId) ?: arg.getName(fallbackToId) ?: continue
-                            acceptor.acceptMethodArg(method, arg.lvIndex, toArgName)
-                        }
+                    if (toMethodName != null) {
+                        project.logger.debug("fromMethodName: $fromMethodName toMethodName: $toMethodName")
+                        val method = memberOf(fromClassName, fromMethodName, fromMethodDesc)
 
-                        for (localVar in methodDef.vars) {
-                            val toLocalVarName = localVar.getName(toId) ?: localVar.getName(fallbackToId) ?: continue
-                            acceptor.acceptMethodVar(
-                                method, localVar.lvIndex, localVar.startOpIdx, localVar.lvtRowIndex, toLocalVarName
-                            )
+                        project.logger.debug("fromMethodName: $fromMethodName toMethodName: $toMethodName")
+                        acceptor.acceptMethod(method, toMethodName)
+
+                        if (remapLocalVariables) {
+                            for (arg in methodDef.args) {
+                                val toArgName = arg.getName(toId) ?: arg.getName(fallbackToId) ?: continue
+                                acceptor.acceptMethodArg(method, arg.lvIndex, toArgName)
+                            }
+
+                            for (localVar in methodDef.vars) {
+                                val toLocalVarName = localVar.getName(toId) ?: localVar.getName(fallbackToId) ?: continue
+                                acceptor.acceptMethodVar(
+                                    method, localVar.lvIndex, localVar.startOpIdx, localVar.lvtRowIndex, toLocalVarName
+                                )
+                            }
                         }
                     }
                 }
